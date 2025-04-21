@@ -1,11 +1,12 @@
 #!/usr/bin/python3
+
 import json
 from collections import OrderedDict
 import datetime
-import math
 import sqlite3
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 import numpy as np
 from pypfopt.expected_returns import capm_return, returns_from_prices
 from pypfopt.risk_models import CovarianceShrinkage
@@ -28,58 +29,36 @@ def get_user_input():
     NOTE ---------------------------
     ask desired amount by retirement?
     """
-    filepath = "../backend/investments.json"
+
+    filepath = "investments.json"
     
     # try:
     with open(filepath, 'r') as f:
         investment = json.load(f)
     print(investment)
 
-    investment_amount = investment["totalInvestment"]
-    year_contributions = investment["yearlyInvestment"]
-    year_salary = investment["annualSalary"]
-    risk_tolerance = investment["riskTolerance"]
-    age = investment["age"]
-    target_retirement_year = investment["retirementYear"]
-    management_comfort_level = investment["portfolioManagement"]
+    investment = investment[0]
+
+    investment_amount = int(investment["totalInvestment"])
+    year_contributions = int(investment["yearlyInvestment"])
+    year_salary = int(investment["annualSalary"])
+    risk_tolerance = int(investment["riskTolerance"])
+    age = int(investment["age"])
+    target_retirement_year = int(investment["retirementYear"])
+    management_comfort_level = int(investment["portfolioManagement"])
     brokerage = investment["investmentPlatform"]
+
 
     current_year = datetime.datetime.today().year
 
     # If the user is investing too much of their salary (>20%), warn them that they may be investing too much
-    percentage_of_income = year_contributions / year_salary 
+    # If not currently employed, set percentage of income to 1 to avoid divide by zero error
+
+    percentage_of_income = year_contributions / max(year_salary, 1)
 
     years_until_retirement = max((target_retirement_year - current_year), 0)
-    retirement_age = age + years_until_retirement
 
-    return investment_amount, risk_tolerance, age, target_retirement_year, management_comfort_level, brokerage, percentage_of_income, years_until_retirement, retirement_age
-
-        
-    # except FileNotFoundError:
-    #     print(f"Error: The file '{f}' was not found.")
-    # except json.JSONDecodeError:
-    #     print(f"Error: The file '{f}' contains invalid JSON.")
-    # except Exception as e:
-    #     print(f"An unexpected error occurred: {e}")
-
-    # investment_amount = 100000
-    # year_contributions = 7000
-    # year_salary = 100000
-    # risk_tolerance = 10
-    # age = 70
-    # target_retirement_year = 2025
-    # management_comfort_level = 3
-    # brokerage = 'Fidelity'
-
-    # current_year = datetime.datetime.today().year
-
-    # # If the user is investing too much of their salary (>20%), warn them that they may be investing too much
-    # percentage_of_income = year_contributions / year_salary 
-
-    # years_until_retirement = max((target_retirement_year - current_year), 0)
-    # retirement_age = age + years_until_retirement
-
-    # return investment_amount, risk_tolerance, age, target_retirement_year, management_comfort_level, brokerage, percentage_of_income, years_until_retirement, retirement_age
+    return investment_amount, risk_tolerance, age, target_retirement_year, management_comfort_level, brokerage, percentage_of_income, years_until_retirement
 
 
 def get_historical_data(brokerage):
@@ -182,7 +161,6 @@ def get_allocation_strategy(risk_tolerance, management_comfort_level, percentage
     if percentage_of_income > 0.20:
         print("Warning: you may be investing too much of your income. The suggested range is 10% to 20%.")
         print("Your Portfolio will have reduced risk due to this.")
-        input("Hit enter to continue.")
 
         # Reduce risk because percentage of income is too high
         risk_tolerance = (1-percentage_of_income) * risk_tolerance
@@ -216,68 +194,59 @@ def get_allocation_strategy(risk_tolerance, management_comfort_level, percentage
 
     return reccomendation
 
-
-def custom_round(number, threshold):
-    # Rounds up or down to the nearest multiple of 5
-    # This gives the best year/target date fund to choose
-    if number < threshold:
-        return math.floor(number / 5) * 5 
-    else:
-        return math.ceil(number / 5) * 5
     
-def get_target_date_fund(target_retirement_year, brokerage, investment_amount, age):
-
-    vanguard_target_retirement_funds = {
-    'VTTVX' : 2025,
-    'VTHRX' : 2030,
-    'VTTHX' : 2035,
-    'VFORX' : 2040,
-    'VTIVX' : 2045,
-    'VFIFX' : 2050,
-    'VFFVX' : 2055,
-    'VTTSX' : 2060,
-    'VLXVX' : 2065,
-    'VSVNX' : 2070,
-    }
+def get_target_date_fund(target_retirement_year, brokerage, investment_amount, age, latest_prices):
 
     fidelity_target_retirement_funds = {
-    'FQIFX' : 2025,
-    'FXIFX' : 2030,
-    'FIHFX' : 2035,
-    'FBIFX' : 2040,
-    'FIOFX' : 2045,
-    'FIPFX' : 2050,
-    'FDEWX' : 2055,
-    'FDKLX' : 2060,
-    'FFINX' : 2065,
-    'FRBVX' : 2070,
+        year: fund 
+        for fund, years in {
+            'FQIFX': range(2025, 2029),
+            'FXIFX': range(2030, 2034),
+            'FIHFX': range(2035, 2039),
+            'FBIFX': range(2040, 2044),
+            'FIOFX': range(2045, 2049),
+            'FIPFX': range(2050, 2054),
+            'FDEWX': range(2055, 2059),
+            'FDKLX': range(2060, 2064),
+            'FFINX': range(2065, 2069),
+            'FRBVX': range(2070, 2075)
+        }.items()
+        for year in years
     }
 
-    # Determine the target year using custom_round
-    target_year = custom_round(target_retirement_year, threshold=target_retirement_year + 2.5)
-    print("View https://retirementplans.vanguard.com/VGApp/pe/pubeducation/investing/LTgoals/TargetRetirementFunds.jsf to visualize how your fund will change over time")
+    vanguard_target_retirement_funds = {
+        year: fund 
+        for fund, years in {
+            'VTTHX': range(2020, 2025),
+            'VTHRX': range(2030, 2034),
+            'VTTVX': range(2035, 2039),
+            'VTWNX': range(2040, 2044),
+            'VTINX': range(2045, 2049),
+            'VFIFX': range(2050, 2054),
+            'VFFVX': range(2055, 2059),
+            'VTTSX': range(2060, 2064),
+            'VLXVX': range(2065, 2069),
+            'VSVNX': range(2070, 2075)
+        }.items()
+        for year in years
+    }
 
-    # Select the appropriate fund based on brokerage and target year
-    print(f"Due to not wanting to manually allocating funds, your suggested portfolio is a target date fund. This allows you to put all your money in the given fund and the asset allocation will automatically adjust as you age.")
-    if brokerage == 'vanguard':
-        index = vanguard_target_retirement_funds.get(target_year, "No fund found for this target year")
-        if index in vanguard_target_retirement_funds:
-            print(f"At the target retirement year of {target_retirement_year}, your suggested index is {index} in {brokerage}.")
-        else:
-            print(index)
+    print("To visualize how your fund will change over time, view https://retirementplans.vanguard.com/VGApp/pe/pubeducation/investing/LTgoals/TargetRetirementFunds.jsf")
+
+    # Select the appropriate mapping
+    year_to_fund = vanguard_target_retirement_funds if brokerage == 'Vanguard' else fidelity_target_retirement_funds
+    index = year_to_fund.get(target_retirement_year)
+
+    if index:
+        print(f"At the target retirement year of {target_retirement_year}, your suggested index is {index} in {brokerage}.")
     else:
-        index = fidelity_target_retirement_funds.get(target_year, "No fund found for this target year")
-        if index in fidelity_target_retirement_funds:
-            print(f"At the target retirement year of {target_retirement_year}, your suggested index is {index} in {brokerage}.")
-        else:
-            print(index) 
+        print(f"No fund found for target retirement year {target_retirement_year}. You can still follow the estimated asset allocation.")
 
-    weights = get_estimated_asset_allocation(age, brokerage, investment_amount)
-
+    weights = get_estimated_asset_allocation(age, brokerage, investment_amount, latest_prices)
     return weights
 
 
-def get_retired_fund(mutual_fund_data, investment_amount, brokerage, age):
+def get_retired_fund(investment_amount, brokerage, age, latest_prices):
     """
     According to Charles Schwab (https://www.schwab.com/retirement-portfolio):
     * 60-69: moderate portfolio (60% stock, 35% bonds, 5% cash/cash investments)
@@ -320,35 +289,39 @@ def get_retired_fund(mutual_fund_data, investment_amount, brokerage, age):
     birth_year = current_year - age
 
     # Select the appropriate mapping
-    year_to_fund = vanguard_year_to_fund if brokerage.lower() == 'vanguard' else fidelity_year_to_fund
-
-    # O(1) lookup
+    year_to_fund = vanguard_year_to_fund if brokerage == 'Vanguard' else fidelity_year_to_fund
     index = year_to_fund.get(birth_year)
 
     if index:
         print(f"At your age of {age} (born in {birth_year}), your suggested index is {index} in {brokerage}.")
     else:
-        print(f"No fund found for birth year {birth_year}. Consider other strategies.")
+        print(f"No fund found for birth year {birth_year}. You can still follow the estimated asset allocation.")
 
-    weights = get_estimated_asset_allocation(age, brokerage, investment_amount)
+    weights = get_estimated_asset_allocation(age, brokerage, investment_amount, latest_prices)
     return weights
 
 
-# Display asset allocation in a pie chart
-def display_asset_allocation(allocation, leftover, investment_amount, allocation_type):
-    indices = list(allocation.keys())
-    amounts = [round(x * investment_amount, 2) for x in allocation.values()]
-
+# Display asset allocation in a pie chart and print exact amounts
+def display_asset_allocation(latest_prices, allocation, leftover, allocation_type):
+    # Calculate dollar amounts
+    dollar_allocation = {ticker: shares * latest_prices[ticker] 
+                        for ticker, shares in allocation.items()}
+    
     # Show discrete allocation
-    print("\nWe suggest putting:",)
-    for i in range(len(allocation)):
-        print(f"${amounts[i]:,.2f} in {indices[i]}")
+    print("\nWe suggest buying:")
+    for ticker, shares in allocation.items():
+        amount = dollar_allocation[ticker]
+        print(f"{shares} shares in {ticker}, worth ${amount:,.2f} ")
 
-    print("Funds remaining: ${:.2f}".format(leftover))
+    # Show remaining cash
+    print(f"\nFunds remaining: ${leftover:,.2f}")
 
     # Create pie chart
     plt.figure(figsize=(6, 6))
-    plt.pie(amounts, labels=indices, autopct='%1.1f%%', startangle=140)
+    plt.pie(dollar_allocation.values(), 
+            labels=dollar_allocation.keys(), 
+            autopct='%1.1f%%', 
+            startangle=140)
     plt.axis('equal')
     plt.title(f"Allocation from {allocation_type}")
     plt.show()
@@ -356,7 +329,7 @@ def display_asset_allocation(allocation, leftover, investment_amount, allocation
     return
 
 
-def HRP(mutual_fund_data, investment_amount):
+def HRP(mutual_fund_data, investment_amount, latest_prices):
     mu = returns_from_prices(mutual_fund_data)
     S = CovarianceShrinkage(mutual_fund_data).ledoit_wolf() # Covariance matrix
 
@@ -369,16 +342,15 @@ def HRP(mutual_fund_data, investment_amount):
     #print("\nHierarchial risk parity weights:", hrp_weights)
 
     # Get exact allocation values
-    latest_prices = get_latest_prices(mutual_fund_data)
     da_hrp = DiscreteAllocation(hrp_weights, latest_prices, total_portfolio_value=investment_amount)
     allocation, leftover = da_hrp.greedy_portfolio()
 
-    display_asset_allocation(allocation, leftover, investment_amount, "Hierarchial Risk Parity (HRP) allocation:")
+    display_asset_allocation(latest_prices, allocation, leftover, "Hierarchial Risk Parity (HRP) allocation:")
 
     return hrp_weights
     
 
-def MVO(mutual_fund_data, investment_amount):
+def MVO(mutual_fund_data, investment_amount, latest_prices):
     mu = capm_return(mutual_fund_data)  # Calculated returns
     S = CovarianceShrinkage(mutual_fund_data).ledoit_wolf() # Covariance matrix
 
@@ -391,16 +363,15 @@ def MVO(mutual_fund_data, investment_amount):
     ef.portfolio_performance(verbose=True)
 
     # Get exact allocation values
-    latest_prices = get_latest_prices(mutual_fund_data)
     da = DiscreteAllocation(weights, latest_prices, total_portfolio_value=investment_amount)
     allocation, leftover = da.greedy_portfolio()
 
-    display_asset_allocation(allocation, leftover, investment_amount, 'Mean Variance Optimization (MVO) allocation:')
+    display_asset_allocation(latest_prices, allocation, leftover, 'Mean Variance Optimization (MVO) allocation:')
 
     return cleaned_weights
 
 
-def efficient_semivariance(mutual_fund_data, investment_amount):
+def efficient_semivariance(mutual_fund_data, investment_amount, latest_prices):
     
     mu = capm_return(mutual_fund_data)
     historical_returns = returns_from_prices(mutual_fund_data)
@@ -413,17 +384,16 @@ def efficient_semivariance(mutual_fund_data, investment_amount):
     es.portfolio_performance(verbose=True)
 
     # Discrete allocation
-    latest_prices = get_latest_prices(mutual_fund_data)
     da_sv = DiscreteAllocation(weights, latest_prices, total_portfolio_value=investment_amount)
 
     allocation, leftover = da_sv.greedy_portfolio()
 
-    display_asset_allocation(allocation, leftover, investment_amount, "Efficient Semivariance allocation:")
+    display_asset_allocation(latest_prices, allocation, leftover, "Efficient Semivariance allocation:")
 
     return weights
 
 
-def mCVAR(mutual_fund_data, investment_amount):
+def mCVAR(mutual_fund_data, investment_amount, latest_prices):
 
     mu = capm_return(mutual_fund_data) 
     S = mutual_fund_data.cov()
@@ -435,16 +405,15 @@ def mCVAR(mutual_fund_data, investment_amount):
     ef_cvar.portfolio_performance(verbose=True)
 
     # Discrete allocation
-    latest_prices = get_latest_prices(mutual_fund_data)
     da_cvar = DiscreteAllocation(cvar_weights, latest_prices, total_portfolio_value=investment_amount)
     allocation, leftover = da_cvar.greedy_portfolio()
 
-    display_asset_allocation(allocation, leftover, investment_amount, "Monte Carlo Value at Risk (mCVAR) allocation:")
+    display_asset_allocation(latest_prices, allocation, leftover, "Monte Carlo Value at Risk (mCVAR) allocation:")
 
     return cleaned_weights
 
 
-def efficient_cdar(mutual_fund_data, investment_amount):
+def efficient_cdar(mutual_fund_data, investment_amount, latest_prices):
     
     mu = capm_return(mutual_fund_data)
     historical_returns = returns_from_prices(mutual_fund_data)
@@ -457,16 +426,15 @@ def efficient_cdar(mutual_fund_data, investment_amount):
     es.portfolio_performance(verbose=True)
 
     # Discrete allocation
-    latest_prices = get_latest_prices(mutual_fund_data)
     da_cdar = DiscreteAllocation(weights, latest_prices, total_portfolio_value=investment_amount)
     allocation, leftover = da_cdar.greedy_portfolio()
 
-    display_asset_allocation(allocation, leftover, investment_amount, "Efficeint Conditional Drawdown at Risk (CDaR) allocation:")
+    display_asset_allocation(latest_prices, allocation, leftover, "Efficeint Conditional Drawdown at Risk (CDaR) allocation:")
 
     return weights
 
 
-def efficient_cvar(mutual_fund_data, investment_amount):
+def efficient_cvar(mutual_fund_data, investment_amount, latest_prices):
 
     mu = capm_return(mutual_fund_data)
     historical_returns = returns_from_prices(mutual_fund_data)
@@ -480,48 +448,53 @@ def efficient_cvar(mutual_fund_data, investment_amount):
     es.portfolio_performance(verbose=True)
 
     # Discrete allocation
-    latest_prices = get_latest_prices(mutual_fund_data)
     da_cvar = DiscreteAllocation(weights, latest_prices, total_portfolio_value=investment_amount)
     allocation, leftover = da_cvar.greedy_portfolio()
 
-    display_asset_allocation(allocation, leftover, investment_amount, "Efficeint Conditional Value at Risk (CVaR) allocation:")
+    display_asset_allocation(latest_prices, allocation, leftover, "Efficeint Conditional Value at Risk (CVaR) allocation:")
 
     return weights
 
 
 # Get the correct index for each asset type in for the right brokerage
 # Converts allocation percentages into normalized weights between 0-1
-def build_estimated_portfolio(allocation, brokerage, investment_amount):
-    # Normalize allocations to sum to 1, handling potential floating-point errors
+# Used in get_estimated_asset_allocation()
+def build_estimated_portfolio(allocation, brokerage, investment_amount, latest_prices):
+    # Normalize allocations
     total = sum(allocation)
     normalized_allocation = [a/total for a in allocation]
-
-    # Build an ordered dict with the index of each asset for the given brokerage
-    # In order from top to bottom: US equity, non-US equity, bonds, short term debt
-    portfolio = OrderedDict()
+    
+    # Build weights dictionary
+    weights = OrderedDict()
     if brokerage == "Vanguard":
-        portfolio["VTI"] = normalized_allocation[0]
-        portfolio["VXUS"] = normalized_allocation[1]
-        portfolio["BND"] = normalized_allocation[2]
-        portfolio["VTIP"] = normalized_allocation[3]
+        tickers = ["VTI", "VXUS", "BND", "VTIP"]
     else:
-        portfolio["FZROX"] = normalized_allocation[0]
-        portfolio["FZILX"] = normalized_allocation[1]
-        portfolio["FXNAX"] = normalized_allocation[2]
-        portfolio["FSHBX"] = normalized_allocation[3]    
+        tickers = ["FZROX", "FZILX", "FXNAX", "FSHBX"]
+    
+    for i, ticker in enumerate(tickers):
+        weights[ticker] = normalized_allocation[i]
+    
+    # Calculate discrete allocation if prices are provided
+    allocation_dict = OrderedDict()
+    leftover = 0
+    
+    for ticker, weight in weights.items():
+        dollar_amount = weight * investment_amount
+        shares = int(dollar_amount / latest_prices[ticker])
+        allocation_dict[ticker] = shares
+        leftover += dollar_amount - (shares * latest_prices[ticker])
 
-    display_asset_allocation(portfolio, 0, investment_amount, "Estimated retirement portfolio allocation: ")
+    display_asset_allocation(latest_prices, allocation_dict, leftover, "Estimated retirement portfolio allocation: ")
 
-    return portfolio
+    return weights
 
 # Getting estimated asset allocation is needed for users who were suggested a target date fund or retired fund strategy
-def get_estimated_asset_allocation(age, brokerage, investment_amount):
+def get_estimated_asset_allocation(age, brokerage, investment_amount, latest_prices):
     """
     Used post-retirement data from Fidelity and target date retirement funds from Vanguard.
     Found that asset allocation did not change between 20-40 years old (target date retirement 2070-2050)
     Got accurate asset allocation estimates from a trendline for the rest of the ages (40+)
     """
-    # Initialize allocation values in percentages
     # Asset order: US-stocks, bonds, Non-US stocks, short term debt 
 
     # If the user is under 40, the asset allocation does not change
@@ -541,7 +514,7 @@ def get_estimated_asset_allocation(age, brokerage, investment_amount):
         asset_allocation = [US_equity, non_US_equity, bonds, short_term_debt]
 
     # Get the designated index for each asset
-    asset_allocation = build_estimated_portfolio(asset_allocation, brokerage, investment_amount)
+    asset_allocation = build_estimated_portfolio(asset_allocation, brokerage, investment_amount, latest_prices)
 
     return asset_allocation
 
@@ -598,16 +571,22 @@ def portfolio_monte_carlo_simulation(mutual_fund_data, benchmark_index_data, wei
     # Portfolio plot
     plt.figure(figsize=(14, 6))
     plt.plot(portfolio_sims)
-    plt.title("Portfolio Simulations")
-    plt.ylabel("Value ($)")
-    plt.xlabel("Days")
+    plt.title(f"Portfolio Simulations (Initial Investment: ${investment_amount:,.2f})", fontsize=14)
+    plt.ylabel("Portfolio Value ($)", fontsize=12)
+    plt.xlabel("Trading Days", fontsize=12)
+    ax = plt.gca()
+    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, loc: "{:,}".format(int(x))))
     plt.show()
     
     # Benchmarks plot
     plt.figure(figsize=(14, 6))
     for i in range(n_benchmarks):
         plt.plot(benchmarks_sims[:, :, i], label=benchmark_index_data.columns[i])
-    plt.title("Benchmark Simulations")
+    plt.title(f"Benchmark Simulations (Initial Investment: ${investment_amount:,.2f})", fontsize=14)
+    plt.ylabel("Portfolio Value ($)", fontsize=12)
+    plt.xlabel("Trading Days", fontsize=12)
+    ax = plt.gca()
+    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, loc: "{:,}".format(int(x))))
     plt.show()
 
     return portfolio_sims, benchmarks_sims
@@ -617,43 +596,103 @@ def portfolio_monte_carlo_simulation(mutual_fund_data, benchmark_index_data, wei
 def show_percentiles(portfolio_sims, benchmark_sims, benchmark_index_data, investment_amount):
     # Portfolio Percentiles (Standalone Figure)
     plt.figure(figsize=(16, 8))
-    portfolio_percentiles = np.percentile(portfolio_sims, [5, 25, 50, 75, 95], axis=1)
-    plt.plot(portfolio_percentiles.T, linewidth=2)
+    portfolio_percentiles = np.percentile(portfolio_sims, [95, 75, 50, 25, 5], axis=1)
+    lines = plt.plot(portfolio_percentiles.T, linewidth=2)
     plt.title(f"Portfolio Value Percentiles (Initial: ${investment_amount:,.0f})", fontsize=14)
-    plt.ylabel("Value ($)", fontsize=12)
-    plt.xlabel("Days", fontsize=12)
-    plt.legend(['5th', '25th', 'Median', '75th', '95th'], fontsize=11)
+    plt.ylabel("Portfolio Value ($)", fontsize=12)
+    plt.xlabel("Trading Days", fontsize=12)
+    ax = plt.gca()
+    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, loc: "{:,}".format(int(x))))
+    colors = ['forestgreen', 'blueviolet', 'steelblue', 'orange', 'red']
+    for line, color in zip(lines, colors):
+        line.set_color(color)
+    
+    plt.legend(['95th', '75th', 'Median', '25th', '5th'], fontsize=10)
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
     plt.show()
     
-    # Benchmark Percentiles (Separate Figures)
+    # Benchmark Percentiles
+    plt.figure(figsize=(16, 8))
+
+    # Define benchmark-specific line styles
+    benchmark_line_styles = [
+        {'linestyle': '-'},       
+        {'linestyle': '--'},   
+        {'linestyle': '-.'}
+    ]
+
+    # Define percentile colors
+    percentile_colors = {
+        '5th': 'red',
+        '25th': 'orange',
+        'Median': 'steelblue',
+        '75th': 'blueviolet',
+        '95th': 'forestgreen'
+    }
+
+    # Plot order
+    percentiles = ['95th', '75th', 'Median', '25th', '5th']
+    
     for i in range(benchmark_sims.shape[2]):
-        plt.figure(figsize=(16, 6))
         benchmark_percentiles = np.percentile(benchmark_sims[:, :, i], [5, 25, 50, 75, 95], axis=1)
-        plt.plot(benchmark_percentiles.T, linewidth=2)
-        plt.title(f"{benchmark_index_data.columns[i]} Percentiles", fontsize=14)
-        plt.ylabel("Value ($)", fontsize=12)
-        plt.xlabel("Days", fontsize=12)
-        plt.legend(['5th', '25th', 'Median', '75th', '95th'], fontsize=11)
-        plt.grid(True, alpha=0.3)
-        plt.tight_layout()
-        plt.show()
+        
+        # Plot percentiles
+        for j, p in enumerate(reversed(percentiles)):
+            original_p = ['5th', '25th', 'Median', '75th', '95th'][j]
+            style = {
+                'color': percentile_colors[original_p],
+                'linewidth': 2 if original_p == 'Median' else 1,
+                'alpha': 0.7 if original_p != 'Median' else 1,
+                'linestyle': benchmark_line_styles[i]['linestyle']
+            }
+            plt.plot(benchmark_percentiles[j], 
+                    label=f"{benchmark_index_data.columns[i]} {p}",
+                    **style)
+
+    plt.title("All Benchmark Percentiles Comparison", fontsize=16)
+    plt.ylabel("Portfolio Value ($)", fontsize=14)
+    plt.xlabel("Trading Days", fontsize=14)
+    plt.gca().yaxis.set_major_formatter(plt.FuncFormatter(lambda x, loc: "{:,}".format(int(x))))
+    plt.grid(True, alpha=0.3)
+
+    # Create custom legend
+    legend_elements = []
+    
+    # Add percentile legend items
+    for p in percentiles:
+        original_p = {'95th': '95th', '75th': '75th', 'Median': 'Median', 
+                     '25th': '25th', '5th': '5th'}[p]
+        legend_elements.append(Line2D([0], [0], 
+                                color=percentile_colors[original_p],
+                                linewidth=2 if original_p == 'Median' else 1,
+                                label=p))
+    
+    # Add benchmark style legend items
+    for i, benchmark in enumerate(benchmark_index_data.columns):
+        legend_elements.append(Line2D([0], [0], 
+                                color='black',
+                                linestyle=benchmark_line_styles[i]['linestyle'],
+                                label=f"{benchmark} style"))
+
+    plt.legend(handles=legend_elements, bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=10)
+    plt.tight_layout()
+    plt.show()
 
     return
 
 
+# Displays a plot with percentiles from both the portfolio and benchmarks
 def show_combined_percentiles(portfolio_sims, benchmark_sims, benchmark_index_data, investment_amount):
     plt.figure(figsize=(14, 8))
     
     # Calculate portfolio percentiles
-    portfolio_percentiles = np.percentile(portfolio_sims, [5, 25, 50, 75, 95], axis=1)
-    days = portfolio_sims.shape[0]
+    portfolio_percentiles = np.percentile(portfolio_sims, [95, 75, 50, 25, 5], axis=1)
     
     # Plot portfolio percentiles
     plt.plot(portfolio_percentiles.T, 
-             label=['Portfolio 5th', 'Portfolio 25th', 'Portfolio Median', 
-                    'Portfolio 75th', 'Portfolio 95th'],
+             label=['Portfolio 95th', 'Portfolio 75th', 'Portfolio Median', 
+                    'Portfolio 25th', 'Portfolio 5th'],
              linestyle='-', linewidth=2)
     
     # Calculate and plot benchmark percentiles
@@ -662,7 +701,7 @@ def show_combined_percentiles(portfolio_sims, benchmark_sims, benchmark_index_da
     
     for i in range(n_benchmarks):
         benchmark_name = benchmark_index_data.columns[i]
-        benchmark_percentiles = np.percentile(benchmark_sims[:, :, i], [50], axis=1)  # Just median
+        benchmark_percentiles = np.percentile(benchmark_sims[:, :, i], [50], axis=1)
         
         plt.plot(benchmark_percentiles.T, 
                  label=f'{benchmark_name} Median',
@@ -670,10 +709,12 @@ def show_combined_percentiles(portfolio_sims, benchmark_sims, benchmark_index_da
                  linestyle='--', 
                  linewidth=2)
     
-    plt.title(f"Projected Portfolio vs Benchmark Percentiles (Initial: ${investment_amount:,.0f})")
-    plt.ylabel("Portfolio Value ($)")
-    plt.xlabel("Days")
-    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.title(f"Projected Portfolio vs Benchmark Percentiles (Initial: ${investment_amount:,.0f})", fontsize=14)
+    plt.ylabel("Portfolio Value ($)", fontsize=12)
+    plt.xlabel("Trading Days", fontsize=12)
+    ax = plt.gca()
+    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, loc: "{:,}".format(int(x))))
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=10)
     plt.grid(True)
     plt.tight_layout()
     plt.show()
@@ -683,9 +724,18 @@ def show_combined_percentiles(portfolio_sims, benchmark_sims, benchmark_index_da
 
 def main():
     # Read user input from frontend 
-
     # Parse user information
-    investment_amount, risk_tolerance, age, target_retirement_year, management_comfort_level, brokerage, percentage_of_income, years_until_retirement, retirement_age = get_user_input()
+    investment_amount, risk_tolerance, age, target_retirement_year, management_comfort_level, brokerage, percentage_of_income, years_until_retirement = get_user_input()
+
+    # Print user input
+    print("Investment amount: ", investment_amount)
+    print("Risk tolerance: ", risk_tolerance)
+    print("Age: ", age)
+    print("Target retirement year: ", target_retirement_year)
+    print("Management comfort level: ", management_comfort_level)
+    print("Brokerage: ", brokerage)
+    print("percentage_of_income: ", percentage_of_income)
+    print("Years until retirement: ", years_until_retirement)
 
     # Choose allocation strategy
     allocation_strategy = get_allocation_strategy(risk_tolerance, management_comfort_level, percentage_of_income, years_until_retirement)
@@ -693,28 +743,29 @@ def main():
 
     # Collect Historical Price Data 
     mutual_fund_data, benchmark_index_data = get_historical_data(brokerage)
+    latest_prices = get_latest_prices(mutual_fund_data)
 
     # Get portfolio allocation based on suggested allocation strategy
     if allocation_strategy == 'target date fund':
         if (investment_amount < 1000) and (brokerage == "Vanguard"):
             print("DISCLAIMER: Minimum investment for Vanguard retirement funds are $1,000")
-        weights = get_target_date_fund(target_retirement_year, brokerage, investment_amount, age)
+        weights = get_target_date_fund(target_retirement_year, brokerage, investment_amount, age, latest_prices)
     elif allocation_strategy == 'retired':
         if (investment_amount < 1000) and (brokerage == "Vanguard"):
             print("DISCLAIMER: Minimum investment for Vanguard retirement funds are $1,000")
-        weights = get_retired_fund(mutual_fund_data, investment_amount, brokerage, age)
+        weights = get_retired_fund(investment_amount, brokerage, age, latest_prices)
     elif allocation_strategy == 'HRP':
-        weights = HRP(mutual_fund_data, investment_amount)
+        weights = HRP(mutual_fund_data, investment_amount, latest_prices)
     elif allocation_strategy == 'MVO':
-        weights = MVO(mutual_fund_data, investment_amount)
+        weights = MVO(mutual_fund_data, investment_amount, latest_prices)
     elif allocation_strategy == 'Efficient Semivariance':
-        weights = efficient_semivariance(mutual_fund_data,investment_amount)
+        weights = efficient_semivariance(mutual_fund_data,investment_amount, latest_prices)
     elif allocation_strategy == 'mCVAR':
-        weights = mCVAR(mutual_fund_data, investment_amount)
+        weights = mCVAR(mutual_fund_data, investment_amount, latest_prices)
     elif allocation_strategy == 'Efficient CDaR':
-        weights = efficient_cdar(mutual_fund_data,investment_amount)
+        weights = efficient_cdar(mutual_fund_data,investment_amount, latest_prices)
     else:
-        weights = efficient_cvar(mutual_fund_data,investment_amount)
+        weights = efficient_cvar(mutual_fund_data,investment_amount, latest_prices)
 
     portfolio_sims, benchmark_sims = portfolio_monte_carlo_simulation(mutual_fund_data, benchmark_index_data, weights, investment_amount)
     show_percentiles(portfolio_sims, benchmark_sims, benchmark_index_data, investment_amount)
@@ -727,4 +778,6 @@ if __name__ == "__main__":
 
 """
 TODO: 
+User input to see how far into the future to project
+Include recurring annual investments in simulations?
 """
